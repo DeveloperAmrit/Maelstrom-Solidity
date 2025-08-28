@@ -48,14 +48,14 @@ contract Maelstrom {
 
     function priceBuy(address token) public view returns (uint256){
         uint256 timeElapsed = block.timestamp - lastExchangeTimestamp[token];
-        if(timeElapsed >= 24 hours) return lastPriceMid[token]; 
+        if(timeElapsed >= 24 hours) return (lastPriceMid[token] * 120) / 100; 
         uint256 currentPrice = lastPriceBuy[token] + (lastPriceMid[token] - lastPriceBuy[token]) * timeElapsed / (24 hours); 
         return (currentPrice * 120) / 100;
     }
 
     function priceSell(address token) public view returns(uint256){
         uint256 timeElapsed = block.timestamp - lastExchangeTimestamp[token];
-        if(timeElapsed >= 24 hours) return lastPriceMid[token];
+        if(timeElapsed >= 24 hours) return (lastPriceMid[token] * 80) / 100;
         uint256 currentPrice = lastPriceSell[token] + (lastPriceMid[token] - lastPriceSell[token]) * timeElapsed / (24 hours);
         return (currentPrice * 80) / 100;
     }
@@ -95,7 +95,7 @@ contract Maelstrom {
         // Transfer `msg.value / priceBuy(token)` token from this contract to msg.sender
         ethBalance[token] += msg.value;
         uint256 buyPrice = priceBuy(token);
-        require(ERC20(token).balanceOf(address(this)) >= (msg.value / buyPrice), "Not enough tokens in the pool");
+        require((ERC20(token).balanceOf(address(this)) * 10) / 100 >= (msg.value / buyPrice), "Not more than 10% of tokens in pool can be used for swap");
         updatePriceBuyParams(token, buyPrice);
         sendERC20(token, msg.sender, (msg.value / buyPrice));
     }
@@ -103,7 +103,7 @@ contract Maelstrom {
     function sell(address token, uint256 amount) public {
         // Transfer `amount * priceSell(token)` ETH from this contract to msg.sender
         uint256 sellPrice = priceSell(token);
-        require(ethBalance[token] >= amount * sellPrice, "Not enough ETH in the pool");
+        require((ethBalance[token] * 10) / 100 >= amount * sellPrice, "Not more than 10% of eth in pool can be used for swap");
         ethBalance[token] -= amount * sellPrice;
         updatePriceSellParams(token, sellPrice);
         IERC20(token).transferFrom(msg.sender,address(this), amount);
@@ -136,13 +136,13 @@ contract Maelstrom {
 
     function swap(address tokenSell, address tokenBuy, uint256 amountToSell, uint256 minimumAmountToBuy) external {
         // sell tokenSell and then buy TokenBuy with the ETH from the tokenSell you just sold
+        require((ERC20(tokenBuy).balanceOf(address(this)) * 10) / 100 >= minimumAmountToBuy, "Not more than 10% of tokens in pool can be used for swap");
         uint256 buyPrice = priceBuy(tokenBuy);
         uint256 sellPrice = priceSell(tokenSell);
         uint256 ethAmount = sellPrice * amountToSell;
+        require((ethBalance[tokenBuy] * 10) / 100 >= ethAmount, "Not more than 10% of eth in pool can be used for swap");
         uint256 expectedToBought = ethAmount / priceBuy(tokenBuy);
         require(expectedToBought >= minimumAmountToBuy,"Insufficient amount to be recieved");
-        require(ethBalance[tokenBuy] >= ethAmount, "Not enough ETH in the pool of token to be bought");
-        require(ERC20(tokenBuy).balanceOf(msg.sender) >= expectedToBought, "Not enough tokens to buy");
         receiveERC20(tokenSell, msg.sender, amountToSell);
         updatePriceSellParams(tokenSell, sellPrice);
         updatePriceBuyParams(tokenBuy, buyPrice);
