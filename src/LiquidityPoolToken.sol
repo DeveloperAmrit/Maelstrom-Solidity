@@ -2,17 +2,12 @@
 pragma solidity ^0.8.28;
 
 import {ERC20} from 'node_modules/openzeppelin/contracts/token/ERC20/ERC20.sol';
+import {Ownable} from 'node_modules/openzeppelin/contracts/access/Ownable.sol';
 
 
-contract LiquidityPoolToken is ERC20 {
-    address public owner;
-    constructor(string memory name, string memory symbol) ERC20(name, symbol) {
-        owner = msg.sender;
-    }
-    modifier onlyOwner() {
-        require(msg.sender == owner, "Only the contract owner can call this function");
-        _;
-    }
+contract LiquidityPoolToken is ERC20,Ownable {
+    constructor(string memory name, string memory symbol) ERC20(name, symbol) {}
+    
     function mint(address to, uint256 amount) external onlyOwner {
         _mint(to, amount);
     }

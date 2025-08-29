@@ -46,6 +46,24 @@ contract Maelstrom {
         updateTimeStamp(token);
     }
 
+    function _preSell(address token, uint256 amount) internal returns (uint256) {
+        uint256 sellPrice = priceSell(token);
+        uint256 ethAmount = amount * sellPrice;
+        require((ethBalance[token] * 10) / 100 >= ethAmount, "Not more than 10% of eth in pool can be used for swap");
+        ethBalance[token] -= ethAmount;
+        updatePriceSellParams(token, sellPrice);
+        return ethAmount;
+    }
+
+    function _preBuy(address token, uint256 ethAmount) internal returns (uint256) {
+        ethBalance[token] += ethAmount;
+        uint256 buyPrice = priceBuy(token);
+        uint256 tokenAmount = msg.value / buyPrice;
+        require((ERC20(token).balanceOf(address(this)) * 10) / 100 >= tokenAmount, "Not more than 10% of tokens in pool can be used for swap");
+        updatePriceBuyParams(token, buyPrice);
+        return tokenAmount;
+    }
+
     function priceBuy(address token) public view returns (uint256){
         uint256 timeElapsed = block.timestamp - lastExchangeTimestamp[token];
         if(timeElapsed >= 24 hours) return (lastPriceMid[token] * 120) / 100; 
@@ -62,8 +80,8 @@ contract Maelstrom {
 
     function initializePool(address token, uint256 amount, uint256 initialPriceBuy, uint256 initialPriceSell) public payable {
         require(address(poolToken[token]) == address(0), "pool already initialized");
-        string memory tokenName = string.concat(ERC20(token).name(), " LP");
-        string memory tokenSymbol = string.concat(ERC20(token).symbol(), "-LP");
+        string memory tokenName = string.concat(ERC20(token).name(), " Maelstrom Liquidity Pool Token");
+        string memory tokenSymbol = string.concat("m",ERC20(token).symbol());
         LiquidityPoolToken lpt = new LiquidityPoolToken(tokenName, tokenSymbol);
         poolToken[token] = lpt;
         updatePriceBuyParams(token, initialPriceBuy);
@@ -93,22 +111,14 @@ contract Maelstrom {
 
     function buy(address token) public payable {
         // Transfer `msg.value / priceBuy(token)` token from this contract to msg.sender
-        ethBalance[token] += msg.value;
-        uint256 buyPrice = priceBuy(token);
-        require((ERC20(token).balanceOf(address(this)) * 10) / 100 >= (msg.value / buyPrice), "Not more than 10% of tokens in pool can be used for swap");
-        updatePriceBuyParams(token, buyPrice);
-        sendERC20(token, msg.sender, (msg.value / buyPrice));
+        sendERC20(token, msg.sender, _preBuy(token, msg.value));
     }
 
     function sell(address token, uint256 amount) public {
         // Transfer `amount * priceSell(token)` ETH from this contract to msg.sender
-        uint256 sellPrice = priceSell(token);
-        require((ethBalance[token] * 10) / 100 >= amount * sellPrice, "Not more than 10% of eth in pool can be used for swap");
-        ethBalance[token] -= amount * sellPrice;
-        updatePriceSellParams(token, sellPrice);
-        IERC20(token).transferFrom(msg.sender,address(this), amount);
-        (bool success, ) = msg.sender.call{value: amount * sellPrice}(''); 
-        require(success, 'Tranfer failed');
+        receiveERC20(token, msg.sender, amount);
+        (bool success, ) = msg.sender.call{value: _preSell(token,amount)}(''); 
+        require(success, 'Transfer failed');
     }
 
     function deposit(address token) external payable {
@@ -126,28 +136,19 @@ contract Maelstrom {
         pt.burn(msg.sender, amount);
         (uint256 rETH, uint256 rToken) = reserves(token);
         uint256 ts = pt.totalSupply();
-        uint256 ethAmount = rETH * amount / ts;
-        uint256 tokenAmount = rToken * amount / ts;
-        sendERC20(token, msg.sender, tokenAmount);
-        ethBalance[token] -= (rETH * amount) / ts;
+        sendERC20(token, msg.sender, (rToken * amount) / ts);
+        uint256 ethAmount = (rETH * amount) / ts;
+        ethBalance[token] -= ethAmount;
         (bool success, ) = msg.sender.call{value: (ethAmount)}('');
         require(success, "ETH Transfer Failed!");
     }
 
     function swap(address tokenSell, address tokenBuy, uint256 amountToSell, uint256 minimumAmountToBuy) external {
         // sell tokenSell and then buy TokenBuy with the ETH from the tokenSell you just sold
-        require((ERC20(tokenBuy).balanceOf(address(this)) * 10) / 100 >= minimumAmountToBuy, "Not more than 10% of tokens in pool can be used for swap");
-        uint256 buyPrice = priceBuy(tokenBuy);
-        uint256 sellPrice = priceSell(tokenSell);
-        uint256 ethAmount = sellPrice * amountToSell;
-        require((ethBalance[tokenBuy] * 10) / 100 >= ethAmount, "Not more than 10% of eth in pool can be used for swap");
-        uint256 expectedToBought = ethAmount / priceBuy(tokenBuy);
-        require(expectedToBought >= minimumAmountToBuy,"Insufficient amount to be recieved");
+        uint256 ethAmount = _preSell(tokenSell, amountToSell);
+        uint256 tokenAmount = _preBuy(tokenBuy, ethAmount);
+        require(tokenAmount >= minimumAmountToBuy, "Insufficient output amount");
         receiveERC20(tokenSell, msg.sender, amountToSell);
-        updatePriceSellParams(tokenSell, sellPrice);
-        updatePriceBuyParams(tokenBuy, buyPrice);
-        ethBalance[tokenSell] -= ethAmount;
-        ethBalance[tokenBuy] += ethAmount;
-        sendERC20(tokenBuy, msg.sender, expectedToBought);
+        sendERC20(tokenBuy, msg.sender, tokenAmount);
     }
 }
