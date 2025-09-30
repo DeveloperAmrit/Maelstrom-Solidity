@@ -58,7 +58,7 @@ contract Maelstrom {
     function _preBuy(address token, uint256 ethAmount) internal returns (uint256) {
         ethBalance[token] += ethAmount;
         uint256 buyPrice = priceBuy(token);
-        uint256 tokenAmount = msg.value / buyPrice;
+        uint256 tokenAmount = ethAmount / buyPrice;
         require((ERC20(token).balanceOf(address(this)) * 10) / 100 >= tokenAmount, "Not more than 10% of tokens in pool can be used for swap");
         updatePriceBuyParams(token, buyPrice);
         return tokenAmount;
@@ -82,6 +82,7 @@ contract Maelstrom {
         require(address(poolToken[token]) == address(0), "pool already initialized");
         string memory tokenName = string.concat(ERC20(token).name(), " Maelstrom Liquidity Pool Token");
         string memory tokenSymbol = string.concat("m",ERC20(token).symbol());
+        receiveERC20(token, msg.sender, amount);
         LiquidityPoolToken lpt = new LiquidityPoolToken(tokenName, tokenSymbol);
         poolToken[token] = lpt;
         updatePriceBuyParams(token, initialPriceBuy);
