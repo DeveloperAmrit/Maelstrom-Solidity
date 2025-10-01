@@ -22,6 +22,12 @@ contract Maelstrom {
         uint256 decayedBuyVolume;
         uint256 decayedSellVolume;
     }
+    event PoolInitialized(address indexed token, uint256 tokenAmount, uint256 ethAmount, uint256 initialPriceBuy, uint256 initialPriceSell);
+    event BuyTrade(address indexed token,address indexed trader,uint256 ethAmount,uint256 tokenAmount,uint256 buyPrice);
+    event SellTrade(address indexed token,address indexed trader,uint256 tokenAmount,uint256 ethAmount,uint256 sellPrice);
+    event SwapTrade(address indexed tokenSold,address indexed tokenBought,address indexed trader,uint256 tokenAmountSold,uint256 tokenAmountBought);
+    event Deposit(address indexed token,address indexed user,uint256 ethAmount,uint256 tokenAmount,uint256 lpTokensMinted);
+    event Withdraw(address indexed token,address indexed user,uint256 ethAmount,uint256 tokenAmount,uint256 lpTokensBurned);
     uint256 multiplicationFactor = 5;
     address[] public poolList;
     mapping(address => mapping(address => uint256)) public userPoolIndex;  //index+1 is stored
@@ -29,6 +35,7 @@ contract Maelstrom {
     mapping(address => LiquidityPoolToken) public poolToken; 
     mapping(address => uint256) public ethBalance;
     mapping(address => PoolParams) public pools;
+    
 
     function sendERC20(address token, address to, uint256 tokenAmount) internal {
         SafeERC20.safeTransfer(IERC20(token), to, tokenAmount);
@@ -75,22 +82,22 @@ contract Maelstrom {
         pool.lastExchangeTimestamp = block.timestamp;
     }
 
-    function _postSell(address token, uint256 amount) internal returns (uint256) {
+    function _postSell(address token, uint256 amount) internal returns (uint256,uint256) {
         uint256 sellPrice = priceSell(token);
         uint256 ethAmount = amount * sellPrice;
         require((ethBalance[token] * 10) / 100 >= ethAmount, "Not more than 10% of eth in pool can be used for swap");
         ethBalance[token] -= ethAmount;
         updatePriceSellParams(token,amount,sellPrice);
-        return ethAmount;
+        return (ethAmount,sellPrice);
     }
 
-    function _preBuy(address token, uint256 ethAmount) internal returns (uint256) {
+    function _preBuy(address token, uint256 ethAmount) internal returns (uint256,uint256) {
         ethBalance[token] += ethAmount;
         uint256 buyPrice = priceBuy(token);
         uint256 tokenAmount = ethAmount / buyPrice;
         require((ERC20(token).balanceOf(address(this)) * 10) / 100 >= tokenAmount, "Not more than 10% of tokens in pool can be used for swap");
         updatePriceBuyParams(token,tokenAmount, buyPrice);
-        return tokenAmount;
+        return (tokenAmount,buyPrice);
     }
 
     function priceBuy(address token) public view returns (uint256){
@@ -137,6 +144,7 @@ contract Maelstrom {
         ethBalance[token] = msg.value;
         poolToken[token].mint(msg.sender, amount);
         poolList.push(token);
+        emit PoolInitialized(token,amount,msg.value,initialPriceBuy,initialPriceSell);
     }
 
     function reserves(address token) public view returns (uint256, uint256) {
@@ -157,13 +165,17 @@ contract Maelstrom {
     }
 
     function buy(address token) public payable {
-        sendERC20(token, msg.sender, _preBuy(token, msg.value));
+        (uint256 tokenAmount,uint256 buyPrice) = _preBuy(token, msg.value);
+        sendERC20(token, msg.sender, tokenAmount);
+        emit BuyTrade(token, msg.sender, msg.value, tokenAmount, buyPrice);
     }
 
     function sell(address token, uint256 amount) public {
         receiveERC20(token, msg.sender, amount);
+        (uint256 ethAmount,uint256 sellPrice) = _postSell(token, amount);
         (bool success, ) = msg.sender.call{value: _postSell(token,amount)}(''); 
         require(success, 'Transfer failed');
+        emit SellTrade(token, msg.sender, amount, ethAmount, sellPrice);
     }
 
     function deposit(address token) external payable {
@@ -174,9 +186,12 @@ contract Maelstrom {
         }
         uint256 ethBalanceBefore = ethBalance[token];
         ethBalance[token] += msg.value;
-        receiveERC20(token, msg.sender, msg.value * tokenPerETHRatio(token));
+        uint256 tokenAmount = msg.value * tokenPerETHRatio(token);
+        receiveERC20(token, msg.sender, tokenAmount);
         LiquidityPoolToken pt = poolToken[token];
-        pt.mint(msg.sender, (pt.totalSupply() * msg.value) / ethBalanceBefore);
+        uint256 mintAmount = (pt.totalSupply() * msg.value) / ethBalanceBefore;
+        pt.mint(msg.sender, mintAmount);
+        emit Deposit(token, msg.sender, msg.value, tokenAmount, mintAmount);
     }
 
     function withdraw(address token, uint256 amount) external {
@@ -186,7 +201,8 @@ contract Maelstrom {
         pt.burn(msg.sender, amount);
         (uint256 rETH, uint256 rToken) = reserves(token);
         uint256 ts = pt.totalSupply();
-        sendERC20(token, msg.sender, (rToken * amount) / ts);
+        uint256 tokenAmount = (rToken * amount) / ts;
+        sendERC20(token, msg.sender, tokenAmount);
         uint256 ethAmount = (rETH * amount) / ts;
         ethBalance[token] -= ethAmount;
         (bool success, ) = msg.sender.call{value: (ethAmount)}('');
@@ -204,14 +220,16 @@ contract Maelstrom {
             currentPools.pop();
         }
         require(success, "ETH Transfer Failed!");
+        emit Withdraw(token, msg.sender, ethAmount, tokenAmount, amount);
     }
 
     function swap(address tokenSell, address tokenBuy, uint256 amountToSell, uint256 minimumAmountToBuy) external {
-        uint256 ethAmount = _postSell(tokenSell, amountToSell);
+        uint256 ethAmount  = _postSell(tokenSell, amountToSell);
         uint256 tokenAmount = _preBuy(tokenBuy, ethAmount);
         require(tokenAmount >= minimumAmountToBuy, "Insufficient output amount");
         receiveERC20(tokenSell, msg.sender, amountToSell);
         sendERC20(tokenBuy, msg.sender, tokenAmount);
+        emit SwapTrade(tokenSell, tokenBuy, msg.sender, amountToSell, tokenAmount);
     }
 
     function _getSubArray(address[] memory array, uint256 start, uint256 end) internal pure returns (address[] memory) {
