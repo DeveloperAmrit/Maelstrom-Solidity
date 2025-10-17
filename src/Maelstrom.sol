@@ -112,6 +112,17 @@ contract Maelstrom {
         return (uint256)(decayedAmount);
     }
 
+    function processProtocolFees(address token, uint256 totalFee) internal {
+        totalFees += totalFee;
+        totalPoolFees[token] += totalFee;
+        PoolFees memory newFee = PoolFees({fee: totalFee, timestamp: block.timestamp});
+        poolFeesEvents[token].push(newFee);
+        uint256 stableFees = totalFee * protocolParameters.fee() / 10000;
+        address feeRecipient = protocolParameters.treasury();
+        (bool success, ) = feeRecipient.call{value: stableFees}(''); 
+        require(success, 'Transfer failed');
+    }
+
     function updatePriceSellParams(address token, uint256 amountToken, uint256 newPrice) internal {
         PoolParams storage pool = pools[token];
         int256 timeElapsed = (int256)(block.timestamp - pool.lastExchangeTimestamp);
@@ -155,16 +166,9 @@ contract Maelstrom {
         uint256 amountEther = (amountToken * sellPrice) / 1e18;
         require((ethBalance[token] * 10) / 100 >= amountEther, "Not more than 10% of eth in pool can be used for swap");
         ethBalance[token] -= amountEther;
-        uint256 totalFee = ((pools[token].finalSellPrice - sellPrice) * amountToken) / 1e18;
-        totalFees += totalFee;
-        totalPoolFees[token] += totalFee;
-        PoolFees memory newFee = PoolFees({fee: totalFee, timestamp: block.timestamp});
-        poolFeesEvents[token].push(newFee);
         updatePriceSellParams(token, amountToken, sellPrice);
-        uint256 stableFees = totalFee * protocolParameters.fee() / 10000;
-        address feeRecipient = protocolParameters.treasury();
-        (bool success, ) = feeRecipient.call{value: stableFees}(''); 
-        require(success, 'Transfer failed');
+        uint256 totalFee = ((pools[token].finalSellPrice - sellPrice) * amountToken) / 1e18;
+        processProtocolFees(token, totalFee);
         return (amountEther, sellPrice);
     }
 
@@ -173,16 +177,9 @@ contract Maelstrom {
         uint256 buyPrice = priceBuy(token);
         uint256 amountToken = (amountEther * 1e18 ) / buyPrice;
         require((ERC20(token).balanceOf(address(this)) * 10) / 100 >= amountToken, "Not more than 10% of tokens in pool can be used for swap");
-        uint256 totalFee = ((buyPrice - pools[token].finalBuyPrice) * amountToken) / 1e18;
-        totalFees += totalFee;
-        totalPoolFees[token] += totalFee;
-        PoolFees memory newFee = PoolFees({fee: totalFee, timestamp: block.timestamp});
-        poolFeesEvents[token].push(newFee);
         updatePriceBuyParams(token, amountToken, buyPrice);
-        uint256 stableFees = totalFee * protocolParameters.fee() / 10000;
-        address feeRecipient = protocolParameters.treasury();
-        (bool success, ) = feeRecipient.call{value: stableFees}(''); 
-        require(success, 'Transfer failed');
+        uint256 totalFee = ((buyPrice - pools[token].finalBuyPrice) * amountToken) / 1e18;
+        processProtocolFees(token, totalFee);
         return (amountToken, buyPrice);
     }
 
