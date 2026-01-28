@@ -76,7 +76,6 @@ contract Maelstrom {
     function _getSubArray(address[] memory array, uint256 start, uint256 end) internal pure returns (address[] memory) {
         require(start <= end, "Invalid start or end index");
         if (array.length == 0) return new address[](0);
-        require(start < array.length, "Start index out of bounds");
         end = end >= array.length ? array.length - 1 : end;
         address[] memory subArray = new address[](end - start + 1);
         for (uint256 i = start; i <= end; i++) {
@@ -301,17 +300,21 @@ contract Maelstrom {
         ethBalance[token] -= amountEtherAfterFees;
         (bool success, ) = msg.sender.call{ value: amountEtherAfterFees }("");
         if (pt.balanceOf(msg.sender) == 0) {
-            //Token is removed using swap and pop method(swap it with last element and pop it O(1))
             address[] storage currentPools = userPools[msg.sender];
             mapping(address => uint256) storage poolIndex = userPoolIndex[msg.sender];
-            uint256 index = userPoolIndex[msg.sender][token] - 1;
-            poolIndex[token] = 0;
-            uint256 lastIndex = userPools[msg.sender].length - 1;
-            if (index != 0) {
+
+            uint256 indexToRemove = poolIndex[token] - 1;
+            uint256 lastIndex = currentPools.length - 1;
+
+            if (indexToRemove != lastIndex) {
                 address lastToken = currentPools[lastIndex];
-                currentPools[index] = lastToken;
-                poolIndex[lastToken] = index + 1;
+                currentPools[indexToRemove] = lastToken;
+
+                // Update the index of the moved token (remembering it is 1-based)
+                poolIndex[lastToken] = indexToRemove + 1;
             }
+            currentPools.pop();
+            poolIndex[token] = 0;
         }
         require(success, "ETH Transfer Failed!");
         emit Withdraw(token, msg.sender, amountEtherAfterFees, amountTokenAfterFees, amountPoolToken);
