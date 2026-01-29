@@ -58,7 +58,6 @@ contract MaelstromTest is Test {
         tokenA.approve(address(maelstrom), INITIAL_TOKEN_AMOUNT);
         vm.expectEmit(true, true, true, true);
         emit PoolInitialized(address(tokenA), INITIAL_TOKEN_AMOUNT, 10 ether, INITIAL_BUY_PRICE, INITIAL_SELL_PRICE);
-
         maelstrom.initializePool{ value: 10 ether }(address(tokenA), INITIAL_TOKEN_AMOUNT, INITIAL_BUY_PRICE, INITIAL_SELL_PRICE);
         vm.stopPrank();
         // Check pool was initialized correctly
@@ -80,7 +79,6 @@ contract MaelstromTest is Test {
     function testCannotInitializePoolTwice() public {
         vm.startPrank(alice);
         tokenA.approve(address(maelstrom), INITIAL_TOKEN_AMOUNT * 2);
-
         maelstrom.initializePool{ value: 10 ether }(address(tokenA), INITIAL_TOKEN_AMOUNT, INITIAL_BUY_PRICE, INITIAL_SELL_PRICE);
         vm.expectRevert("pool already initialized");
         maelstrom.initializePool{ value: 10 ether }(address(tokenA), INITIAL_TOKEN_AMOUNT, INITIAL_BUY_PRICE, INITIAL_SELL_PRICE);
@@ -91,7 +89,6 @@ contract MaelstromTest is Test {
         // Initialize pool first
         vm.startPrank(alice);
         tokenA.approve(address(maelstrom), INITIAL_TOKEN_AMOUNT);
-
         maelstrom.initializePool{ value: 10 ether }(address(tokenA), INITIAL_TOKEN_AMOUNT, INITIAL_BUY_PRICE, INITIAL_SELL_PRICE);
         vm.stopPrank();
         // Bob buys tokens
