@@ -2,13 +2,13 @@
 pragma solidity 0.8.20;
 
 
-import { IERC20 } from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
-import { ERC20 } from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
-import { SafeERC20 } from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
-import { LiquidityPoolToken } from "./LiquidityPoolToken.sol";
-import { SafeMath } from "node_modules/openzeppelin/contracts/utils/math/SafeMath.sol";
-import { SD59x18, exp } from "prb-math/src/SD59x18.sol";
-import { ProtocolParameters } from "./ProtocolParameters.sol";
+import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import {ERC20} from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
+import {SafeERC20} from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
+import {LiquidityPoolToken} from "./LiquidityPoolToken.sol";
+import {SafeMath} from "node_modules/openzeppelin/contracts/utils/math/SafeMath.sol";
+import {SD59x18, exp} from "prb-math/src/SD59x18.sol";
+import {ProtocolParameters} from "./ProtocolParameters.sol";
 
 contract Maelstrom {
     using SafeMath for uint256;
@@ -106,6 +106,15 @@ contract Maelstrom {
         require(array.length > 0, "Empty array");
         require(start < array.length, "Start index out of bounds");
 
+
+    function _getSubArray(address[] memory array, uint256 start, uint256 end) internal pure returns (address[] memory) {
+        if (array.length == 0) {
+            return new address[](0);
+        }
+        if (start >= array.length) {
+            return new address[](0);
+        }
+
         end = end >= array.length ? array.length - 1 : end;
         require(start <= end, "Invalid start or end index");
 
@@ -154,7 +163,12 @@ contract Maelstrom {
     }
 
 
-    function calculateFinalPrice(uint256 decayedSellVolume, uint256 sellPrice, uint256 decayedBuyVolume, uint256 buyPrice) internal pure returns (uint256) {
+    function calculateFinalPrice(
+        uint256 decayedSellVolume,
+        uint256 sellPrice,
+        uint256 decayedBuyVolume,
+        uint256 buyPrice
+    ) internal pure returns (uint256) {
         if (decayedSellVolume + decayedBuyVolume == 0) return (sellPrice + buyPrice) / 2;
         return (decayedSellVolume * sellPrice + decayedBuyVolume * buyPrice) / (decayedSellVolume + decayedBuyVolume);
     }
@@ -172,7 +186,7 @@ contract Maelstrom {
         uint256 stableFees = (totalFee * protocolParameters.fee()) / 10000;
         address feeRecipient = protocolParameters.treasury();
 
-        (bool success, ) = feeRecipient.call{ value: stableFees }("");
+        (bool success,) = feeRecipient.call{value: stableFees}("");
         require(success, "Transfer failed");
     }
 
@@ -188,8 +202,8 @@ contract Maelstrom {
         pool.initialBuyPrice = priceBuy(token);
         pool.decayedSellVolume = newDecayedSellVolume;
         pool.decayedBuyVolume = decayedBuyVolume;
-        pool.finalBuyPrice =
-            calculateFinalPrice(newDecayedSellVolume, newInitialSellPrice, decayedBuyVolume, pool.initialBuyPrice);
+
+        pool.finalBuyPrice =calculateFinalPrice(newDecayedSellVolume, newInitialSellPrice, decayedBuyVolume, pool.initialBuyPrice);
         pool.finalSellPrice = pool.finalBuyPrice;
         pool.decayedSellTime =
             (((block.timestamp - pool.lastSellTimestamp) * amountToken) + (pool.decayedSellTime * decayedSellVolume))
@@ -210,8 +224,8 @@ contract Maelstrom {
         pool.initialSellPrice = priceSell(token);
         pool.decayedBuyVolume = newDecayedBuyVolume;
         pool.decayedSellVolume = decayedSellVolume;
-        pool.finalBuyPrice =
-            calculateFinalPrice(decayedSellVolume, pool.initialSellPrice, newDecayedBuyVolume, newInitialBuyPrice);
+
+        pool.finalBuyPrice =calculateFinalPrice(decayedSellVolume, pool.initialSellPrice, newDecayedBuyVolume, newInitialBuyPrice);
         pool.finalSellPrice = pool.finalBuyPrice;
         pool.decayedBuyTime =
             (((block.timestamp - pool.lastBuyTimestamp) * amountToken) + (pool.decayedBuyTime * decayedBuyVolume))
@@ -237,7 +251,10 @@ contract Maelstrom {
         uint256 buyPrice = priceBuy(token);
         uint256 amountToken = (amountEther * 1e18) / buyPrice;
 
-        require((ERC20(token).balanceOf(address(this)) * 10) / 100 >= amountToken, "Not more than 10% of tokens in pool can be used for swap");
+        require(
+            (ERC20(token).balanceOf(address(this)) * 10) / 100 >= amountToken,
+            "Not more than 10% of tokens in pool can be used for swap"
+        );
         uint256 totalFee = ((buyPrice - pools[token].finalBuyPrice) * amountToken) / 1e18;
         if (totalFee != 0) processProtocolFees(token, totalFee);
         updatePriceBuyParams(token, amountToken, buyPrice);
@@ -277,7 +294,21 @@ contract Maelstrom {
         poolToken[token] = lpt;
         uint256 avgPrice = (initialPriceBuy + initialPriceSell) / 2;
 
-        pools[token] = PoolParams({ lastBuyPrice: initialPriceBuy, lastSellPrice: initialPriceSell, lastExchangeTimestamp: block.timestamp, finalBuyPrice: avgPrice, finalSellPrice: avgPrice, initialSellPrice: initialPriceSell, initialBuyPrice: initialPriceBuy, lastBuyTimestamp: block.timestamp, lastSellTimestamp: block.timestamp, decayedBuyTime: 0, decayedSellTime: 0, decayedBuyVolume: 0, decayedSellVolume: 0 });
+        pools[token] = PoolParams({
+            lastBuyPrice: initialPriceBuy,
+            lastSellPrice: initialPriceSell,
+            lastExchangeTimestamp: block.timestamp,
+            finalBuyPrice: avgPrice,
+            finalSellPrice: avgPrice,
+            initialSellPrice: initialPriceSell,
+            initialBuyPrice: initialPriceBuy,
+            lastBuyTimestamp: block.timestamp,
+            lastSellTimestamp: block.timestamp,
+            decayedBuyTime: 0,
+            decayedSellTime: 0,
+            decayedBuyVolume: 0,
+            decayedSellVolume: 0
+        });
         ethBalance[token] = msg.value;
         poolToken[token].mint(msg.sender, amountToken);
         poolList.push(token);
@@ -314,7 +345,7 @@ contract Maelstrom {
         (uint256 amountEther, uint256 sellPrice) = _postSell(token, amount);
         require(minimumAmountEther < amountEther, "Insufficient output amount");
 
-        (bool success, ) = msg.sender.call{ value: amountEther }("");
+        (bool success,) = msg.sender.call{value: amountEther}("");
         require(success, "Transfer failed");
         emit SellTrade(token, msg.sender, amount, amountEther, sellPrice, priceSell(token), priceBuy(token));
     }
@@ -346,7 +377,7 @@ contract Maelstrom {
         uint256 amountEtherAfterFees = (amountEther * 995) / 1000;
         ethBalance[token] -= amountEtherAfterFees;
 
-        (bool success, ) = msg.sender.call{ value: amountEtherAfterFees }("");
+        (bool success,) = msg.sender.call{value: amountEtherAfterFees}("");
         if (pt.balanceOf(msg.sender) == 0) {
             //Token is removed using swap and pop method(swap it with last element and pop it O(1))
             address[] storage currentPools = userPools[msg.sender];
