@@ -127,7 +127,7 @@ contract Maelstrom {
     }
 
     function _getDecayValue(uint256 initialVolume, int256 timeElapsed) internal pure returns (uint256) {
-        int256 decayedAmount = SD59x18.unwrap(SD59x18.wrap((int256)(initialVolume)) * exp(SD59x18.wrap(-timeElapsed)));
+        int256 decayedAmount = SD59x18.unwrap(SD59x18.wrap((int256)(initialVolume)) * exp(SD59x18.wrap(-timeElapsed * 1e18)));
         return (uint256)(decayedAmount);
     }
 
